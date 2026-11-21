@@ -3,6 +3,10 @@
 Huquqiy ta’lim uchun raqamli kutubxona va darslik yaratish platformasi (LexHackathon, TDYU).
 Frontend — React (Vite). Backend — kichik FastAPI server (SQLite): foydalanuvchilar, Gemini asosidagi AI Tutor va lex.uz’ni tekshiruvchi Law Watch agenti.
 
+## Pitch taqdimoti
+
+📄 **[final_pitch.pdf](final_pitch.pdf)** — SmartBook (NOWL jamoasi) loyihasining LexHackathon uchun pitch taqdimoti (10 sahifa): muammo, yechim, imkoniyatlar va loyiha g‘oyasi.
+
 ## Arxitektura
 
 ```mermaid
