@@ -56,6 +56,20 @@ Demo hisoblardan birini ishlating yoki “Sign Up” sahifasida o‘z hisobingiz
 
 Rolni almashtirish uchun yuqori o‘ng burchakdagi hisob menyusidan chiqing (Log out) va boshqa hisob bilan kiring.
 
+## AI Tutor uchun Gemini (ixtiyoriy)
+
+AI Tutor oynasida yozilgan savollarga **Gemini** javob beradi. Kalit bo‘lmasa yoki Gemini ishlamasa, avvalgidek tayyor (mock) javoblar ko‘rsatiladi — ilova to‘xtamaydi.
+Belgilangan matn uchun “Explain / Summarize / Ask AI” va tayyor savollar har doim tayyor javoblardan foydalanadi.
+
+1. https://aistudio.google.com/apikey sahifasida bepul API kalit oling.
+2. `backend/.env.example` faylidan nusxa olib, `backend/.env` yarating va kalitni qo‘ying:
+   ```
+   GEMINI_API_KEY=sizning_kalitingiz
+   ```
+3. Backendni qayta ishga tushiring.
+
+`.env` fayli GitHub’ga yuklanmaydi. Kalitni hech kimga yubormang.
+
 ## Law Watch agenti (Lex.uz tekshiruvi)
 
 Kichik agent kitoblarda keltirilgan qonun moddalarini **haqiqiy lex.uz** sahifasi bilan solishtiradi:

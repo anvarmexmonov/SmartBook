@@ -24,6 +24,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
 import law_watch
+import tutor
+
+tutor.load_env_file()
 
 DB_PATH = Path(__file__).parent / "data" / "smartbook.db"
 SESSION_DAYS = 30
@@ -406,3 +409,28 @@ def law_watch_reject(pid: int, user: sqlite3.Row = Depends(professor)):
         _owned_proposal(conn, pid, user)
         conn.execute("UPDATE law_proposals SET status = 'rejected', decided_by = ?, decided_at = ? WHERE id = ?", (user["name"], time.time(), pid))
         return _state(conn, user["id"])
+
+
+# ---------------- AI Tutor (Gemini) ----------------
+
+class TutorIn(BaseModel):
+    mode: Literal["explain", "summarize", "ask"]
+    book_title: str = Field(max_length=300)
+    chapter_title: str = Field(max_length=300)
+    chapter_text: str = Field(max_length=60_000)
+    selection: str = Field(default="", max_length=4000)
+    question: str = Field(default="", max_length=2000)
+
+
+@app.get("/api/tutor/status")
+def tutor_status(_: sqlite3.Row = Depends(current_user)):
+    return {"enabled": tutor.api_key() is not None, "provider": "Gemini", "model": tutor.model()}
+
+
+@app.post("/api/tutor")
+def tutor_answer(body: TutorIn, _: sqlite3.Row = Depends(current_user)):
+    try:
+        text = tutor.answer(body.mode, body.book_title, body.chapter_title, body.chapter_text, body.selection, body.question)
+    except tutor.TutorError as e:
+        error(e.status, str(e))
+    return {"answer": text, "model": tutor.model()}

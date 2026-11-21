@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -20,6 +20,7 @@ import {
 import ChapterBlocks, { RichText } from '../components/ChapterBlocks'
 import { Logo } from '../components/Header'
 import { useBookTransition } from '../components/BookTransition'
+import { authedApi } from '../store/Auth'
 import { useStore, type ReaderTheme } from '../store/AppStore'
 import { SUGGESTED_QUESTIONS, tutorRespond, type TutorAnswer, type TutorMode } from '../data/tutor'
 import type { Block } from '../data/types'
@@ -200,6 +201,45 @@ export default function Reader() {
       }, 700 + Math.random() * 500)
     },
     [chapter],
+  )
+
+  // Plain text of the chapter, sent to Gemini as context for typed questions.
+  const chapterText = useMemo(() => (chapter?.blocks ?? []).map(blockText).filter(Boolean).join('\n\n'), [chapter])
+
+  // Is Gemini configured on the server? (only changes the panel's labels)
+  const [gemini, setGemini] = useState(false)
+  useEffect(() => {
+    if (!tutorAvailable) return
+    authedApi<{ enabled: boolean }>('/tutor/status').then(s => setGemini(s.enabled), () => setGemini(false))
+  }, [tutorAvailable])
+
+  /** Free questions typed in the tutor: Gemini first, prepared answers if it is unavailable. */
+  const askFree = useCallback(
+    (question: string) => {
+      if (!chapter || !book) return
+      setTutorOpen(true)
+      const id = ++msgId.current
+      setMessages(m => [...m, { id, mode: 'ask', question }])
+      setThinking(true)
+      const started = Date.now()
+      const timeout = new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('timeout')), 20_000))
+      Promise.race([
+        authedApi<{ answer: string }>('/tutor', {
+          method: 'POST',
+          body: { mode: 'ask', book_title: book.title, chapter_title: chapter.title, chapter_text: chapterText, question },
+        }),
+        timeout,
+      ])
+        .then((r): TutorAnswer => ({ title: 'Answer', paragraphs: r.answer.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean), matched: true, source: 'gemini' }))
+        .catch(() => tutorRespond('ask', question, chapter.title)) // no key, offline, error: fall back silently
+        .then(answer => {
+          window.setTimeout(() => {
+            setMessages(m => m.map(x => (x.id === id ? { ...x, answer } : x)))
+            setThinking(false)
+          }, Math.max(0, 600 - (Date.now() - started)))
+        })
+    },
+    [book, chapter, chapterText],
   )
 
   if (!book) {
@@ -503,6 +543,8 @@ export default function Reader() {
             hasContent={Boolean(chapter.blocks?.length)}
             onClose={() => setTutorOpen(false)}
             onAsk={question => ask('ask', { question })}
+            onAskFree={askFree}
+            gemini={gemini}
             onClear={() => setMessages([])}
           />
         )}
@@ -575,6 +617,8 @@ function TutorPanel({
   hasContent,
   onClose,
   onAsk,
+  onAskFree,
+  gemini,
   onClear,
 }: {
   messages: TutorMessage[]
@@ -583,6 +627,8 @@ function TutorPanel({
   hasContent: boolean
   onClose: () => void
   onAsk: (q: string) => void
+  onAskFree: (q: string) => void
+  gemini: boolean
   onClear: () => void
 }) {
   const [input, setInput] = useState('')
@@ -592,7 +638,7 @@ function TutorPanel({
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || thinking) return
-    onAsk(input.trim())
+    onAskFree(input.trim())
     setInput('')
   }
 
@@ -606,7 +652,7 @@ function TutorPanel({
           <p className="flex items-center gap-1.5 text-[14px] font-semibold">
             <Sparkles size={15} className="r-accent" /> AI Tutor
           </p>
-          <p className="r-muted text-[11px]">Simulated · pre-written answers for this chapter</p>
+          <p className="r-muted text-[11px]">{gemini ? 'Gemini answers your questions · notes for selected text' : 'Simulated · pre-written answers for this chapter'}</p>
         </div>
         <div className="flex items-center">
           {messages.length > 0 && (
@@ -649,10 +695,13 @@ function TutorPanel({
             </div>
             {m.answer ? (
               <div className="text-[13.5px] leading-[1.65]">
-                <p className="r-accent mb-1.5 text-[12px] font-semibold">{m.answer.title}</p>
+                <p className="r-accent mb-1.5 flex items-center justify-between text-[12px] font-semibold">
+                  {m.answer.title}
+                  {m.answer.source === 'gemini' && <span className="r-muted text-[10px] font-medium uppercase tracking-wider">Gemini</span>}
+                </p>
                 {m.answer.paragraphs.map((p, i) => (
-                  <p key={i} className={i ? 'mt-2' : ''}>
-                    <RichText text={p} />
+                  <p key={i} className={`whitespace-pre-line ${i ? 'mt-2' : ''}`}>
+                    <RichText text={p.replace(/^\s*[*-]\s+/gm, '• ')} />
                   </p>
                 ))}
                 {m.answer.example && (
@@ -686,8 +735,40 @@ function TutorPanel({
             <Send size={15} />
           </button>
         </div>
-        <p className="r-muted mt-2 text-[10.5px] leading-snug">No AI model is connected in this prototype. Answers are prepared explanations matched to the chapter.</p>
+        <p className="r-muted mt-2 text-[10.5px] leading-snug">
+          {gemini
+            ? 'Typed questions are answered by Gemini and can contain mistakes. Check them against the book and the official text on Lex.uz.'
+            : 'No AI model is connected right now. Answers are prepared explanations matched to the chapter.'}
+        </p>
       </form>
     </aside>
   )
+}
+
+/** Readable text of a block, used as context for the tutor. */
+function blockText(b: Block): string {
+  switch (b.type) {
+    case 'h2':
+    case 'h3':
+    case 'p':
+    case 'note':
+    case 'quote':
+      return b.text.replace(/\*\*|\*/g, '')
+    case 'list':
+      return b.items.map(i => '- ' + i.replace(/\*\*|\*/g, '')).join('\n')
+    case 'lex':
+      return `${b.act}, ${b.article} (${b.title}): ${b.excerpt}`
+    case 'lawref':
+      return `${b.title}, ${b.article}: ${b.excerpt} ${b.explanation}`
+    case 'quiz':
+      return `Exercise: ${b.question}`
+    case 'case':
+      return `Case "${b.title}": ${b.facts} Question: ${b.question}`
+    case 'table':
+      return b.rows.map(r => r.join(' | ')).join('\n')
+    case 'diagram':
+      return b.items.map(i => `${i.label} ${i.text}`.trim()).join(' -> ')
+    default:
+      return ''
+  }
 }

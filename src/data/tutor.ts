@@ -130,6 +130,8 @@ export interface TutorAnswer {
   example?: string
   related?: string
   matched: boolean
+  /** 'gemini' when the answer came from the live model; prepared answers leave it unset. */
+  source?: 'gemini'
 }
 
 export function tutorRespond(mode: TutorMode, input: string, chapterTitle: string): TutorAnswer {
