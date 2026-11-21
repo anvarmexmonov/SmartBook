@@ -1,7 +1,67 @@
 # SmartBook
 
 Huquqiy ta’lim uchun raqamli kutubxona va darslik yaratish platformasi (LexHackathon, TDYU).
-Frontend — React (Vite). Foydalanuvchilarni saqlash uchun kichik FastAPI backend ishlatiladi (SQLite).
+Frontend — React (Vite). Backend — kichik FastAPI server (SQLite): foydalanuvchilar, Gemini asosidagi AI Tutor va lex.uz’ni tekshiruvchi Law Watch agenti.
+
+## Arxitektura
+
+```mermaid
+flowchart LR
+    U["👤 Foydalanuvchi<br/>(Talaba / Professor)"] --> FE
+
+    subgraph FE["Frontend · React + Vite (localhost:5173)"]
+        direction TB
+        AUTH["Log In / Sign Up<br/>+ rol himoyasi"]
+        LIB["Library · My Books"]
+        READ["Reader<br/>kitob animatsiyasi · AI Tutor"]
+        STU["Professor Studio<br/>Law · Image · Table · Visual<br/>+ Law Watch paneli"]
+        RAD["Learning Radar"]
+    end
+
+    subgraph BR["Brauzer xotirasi"]
+        LS[("localStorage<br/>sessiya · kitoblar · progress")]
+        IDB[("IndexedDB<br/>yuklangan rasmlar")]
+    end
+
+    subgraph BE["Backend · FastAPI (localhost:8000)"]
+        API["/api/auth<br/>signup · login · me · logout"]
+        TUT["/api/tutor<br/>AI Tutor (tutor.py)"]
+        LW["/api/law-watch<br/>Law Watch agenti (law_watch.py)<br/>faqat professor"]
+        DB[("SQLite<br/>users · sessions<br/>law_refs · law_proposals")]
+        ENV[["backend/.env<br/>GEMINI_API_KEY"]]
+    end
+
+    subgraph EXT["Tashqi xizmatlar"]
+        GEM["🤖 Google Gemini API<br/>gemini-2.5-flash"]
+        LEX["⚖️ lex.uz<br/>rasmiy qonunlar"]
+    end
+
+    MOCK["Tayyor (mock) javoblar<br/>src/data/tutor.ts"]
+
+    AUTH -- "/api (Vite proxy)" --> API
+    API --> DB
+    LIB --> LS
+    READ --> LS
+    STU --> LS
+    STU --> IDB
+    RAD --> LS
+
+    READ -- "yozilgan savol" --> TUT
+    TUT -. "kalitni o‘qiydi" .-> ENV
+    TUT -- "savol + bob matni" --> GEM
+    GEM -- "javob" --> TUT
+    READ -. "Gemini ishlamasa /<br/>Explain · Summarize" .-> MOCK
+
+    STU -- "Run check now ·<br/>Approve / Reject" --> LW
+    LW -- "moddalarni yuklab oladi" --> LEX
+    LW -- "takliflar" --> DB
+```
+
+**AI qanday ishlaydi:**
+
+1. **AI Tutor (Gemini).** Talaba Reader’dagi AI Tutor oynasiga savol yozadi → frontend uni bob matni bilan birga `/api/tutor` ga yuboradi → backend `backend/.env` dagi kalit bilan Gemini’ga so‘rov yuboradi va javobni qaytaradi. API kalit faqat serverda turadi, brauzerga chiqmaydi.
+2. **Zaxira (fallback).** Kalit bo‘lmasa, noto‘g‘ri bo‘lsa, internet yo‘q bo‘lsa yoki Gemini 20 soniyada javob bermasa — talabaga xatosiz tayyor (mock) javob ko‘rsatiladi. “Explain / Summarize / Ask AI” va tayyor savollar doim tayyor javoblardan foydalanadi.
+3. **Law Watch agenti.** Professor “Run check now” bosadi → agent lex.uz’dan qonunni yuklab oladi, kitobdagi iqtiboslarni tekshiradi va SQLite’ga taklif yozadi → kitob faqat professor **Approve** bosgandan keyin o‘zgaradi. Bu agent AI modeldan foydalanmaydi — qarorlar qoidalar asosida, tekshirib bo‘ladigan tarzda qabul qilinadi.
 
 ## Talablar
 
@@ -97,4 +157,4 @@ So‘ng **http://localhost:4173** manzilini oching (backend ham ishlab turishi k
 
 - Hisoblar backendda (SQLite) saqlanadi, parollar faqat xesh ko‘rinishida. O‘qish jarayoni va kitoblar esa brauzerda saqlanadi.
 - Boshidan boshlash uchun istalgan sahifa pastidagi **Reset demo data** tugmasini bosing.
-- AI Tutor va Lex.uz yangilanishlari namoyish uchun simulyatsiya qilingan. Kitoblar va shaxslar to‘qima demo kontentdir.
+- AI Tutor Gemini orqali ishlaydi (kalit bo‘lmasa — tayyor javoblar). Law Watch haqiqiy lex.uz sahifasini tekshiradi. Kitoblar va shaxslar to‘qima demo kontentdir.
