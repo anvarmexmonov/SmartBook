@@ -7,54 +7,20 @@ Frontend — React (Vite). Backend — kichik FastAPI server (SQLite): foydalanu
 
 ```mermaid
 flowchart LR
-    U["👤 Foydalanuvchi<br/>(Talaba / Professor)"] --> FE
+    U["👤 User<br/>Student / Professor"] --> FE["Frontend<br/>React + Vite<br/>localhost:5173"]
 
-    subgraph FE["Frontend · React + Vite (localhost:5173)"]
-        direction TB
-        AUTH["Log In / Sign Up<br/>+ rol himoyasi"]
-        LIB["Library · My Books"]
-        READ["Reader<br/>kitob animatsiyasi · AI Tutor"]
-        STU["Professor Studio<br/>Law · Image · Table · Visual<br/>+ Law Watch paneli"]
-        RAD["Learning Radar"]
+    FE -- "/api" --> BE
+
+    subgraph BE["Backend · FastAPI · localhost:8000"]
+        AUTH["/api/auth<br/>login · signup"]
+        TUTOR["/api/tutor<br/>AI Tutor"]
+        LAW["/api/law-watch<br/>Law Watch agent"]
     end
 
-    subgraph BR["Brauzer xotirasi"]
-        LS[("localStorage<br/>sessiya · kitoblar · progress")]
-        IDB[("IndexedDB<br/>yuklangan rasmlar")]
-    end
-
-    subgraph BE["Backend · FastAPI (localhost:8000)"]
-        API["/api/auth<br/>signup · login · me · logout"]
-        TUT["/api/tutor<br/>AI Tutor (tutor.py)"]
-        LW["/api/law-watch<br/>Law Watch agenti (law_watch.py)<br/>faqat professor"]
-        DB[("SQLite<br/>users · sessions<br/>law_refs · law_proposals")]
-        ENV[["backend/.env<br/>GEMINI_API_KEY"]]
-    end
-
-    subgraph EXT["Tashqi xizmatlar"]
-        GEM["🤖 Google Gemini API<br/>gemini-2.5-flash"]
-        LEX["⚖️ lex.uz<br/>rasmiy qonunlar"]
-    end
-
-    MOCK["Tayyor (mock) javoblar<br/>src/data/tutor.ts"]
-
-    AUTH -- "/api (Vite proxy)" --> API
-    API --> DB
-    LIB --> LS
-    READ --> LS
-    STU --> LS
-    STU --> IDB
-    RAD --> LS
-
-    READ -- "yozilgan savol" --> TUT
-    TUT -. "kalitni o‘qiydi" .-> ENV
-    TUT -- "savol + bob matni" --> GEM
-    GEM -- "javob" --> TUT
-    READ -. "Gemini ishlamasa /<br/>Explain · Summarize" .-> MOCK
-
-    STU -- "Run check now ·<br/>Approve / Reject" --> LW
-    LW -- "moddalarni yuklab oladi" --> LEX
-    LW -- "takliflar" --> DB
+    AUTH --> DB[("SQLite<br/>users")]
+    LAW --> DB
+    TUTOR --> GEM["🤖 Gemini API"]
+    LAW --> LEX["⚖️ lex.uz"]
 ```
 
 **AI qanday ishlaydi:**
