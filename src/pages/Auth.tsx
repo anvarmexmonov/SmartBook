@@ -47,7 +47,7 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
           <div className="mt-8 animate-fadeIn">{children}</div>
         </div>
         <p className="mx-auto max-w-[400px] text-center text-[11px] leading-relaxed text-muted">
-          LexHackathon prototype. Sign-in is simulated in this browser and is not secure — please don’t use a real password.
+          LexHackathon prototype. Accounts are kept on the demo SmartBook server, which is not production-grade — please don’t use a real password.
         </p>
       </main>
     </div>
@@ -225,7 +225,7 @@ const ROLES: { id: Role; title: string; text: string; icon: ReactNode }[] = [
   { id: 'professor', title: 'Professor', text: 'Write and publish textbooks, follow your groups’ progress.', icon: <PenLine size={17} /> },
 ]
 
-type SignUpErrors = Partial<Record<'name' | 'email' | 'password' | 'confirm' | 'role', string>>
+type SignUpErrors = Partial<Record<'name' | 'email' | 'password' | 'confirm' | 'role' | 'form', string>>
 
 function validate(f: { name: string; email: string; password: string; confirm: string; role: Role | null }): SignUpErrors {
   const e: SignUpErrors = {}
@@ -265,7 +265,7 @@ export function SignUp() {
     const res = await signUp({ name: f.name, email: f.email, password: f.password, role: f.role })
     setBusy(false)
     if (!res.ok) {
-      setErrors({ [res.field ?? 'email']: res.error })
+      setErrors({ [res.field ?? 'form']: res.error })
       return
     }
     const next = params.get('next')
@@ -307,6 +307,7 @@ export function SignUp() {
           {errors.role && <p className="mt-1.5 text-[12px] text-wine">{errors.role}</p>}
         </fieldset>
 
+        {errors.form && <p className="text-[13px] text-wine">{errors.form}</p>}
         <button type="submit" className="btn-primary h-11 w-full" disabled={busy}>
           {busy && <Loader2 size={16} className="animate-spin" />}
           {busy ? 'Creating account…' : 'Create Account'}
