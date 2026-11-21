@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
@@ -17,15 +16,14 @@ import {
   Scale,
   Send,
   Trash2,
-  Undo2,
 } from 'lucide-react'
 import BookCover, { PALETTES } from '../components/BookCover'
 import ChapterBlocks from '../components/ChapterBlocks'
+import LawWatch from '../components/LawWatch'
 import { RICH_LABELS, RichBlockFields, RichInsert, isRichBlock } from '../components/StudioTools'
 import { useStore } from '../store/AppStore'
 import { PROFESSOR_ID, PROFESSOR_NAME } from '../data/books'
 import { useAuth } from '../store/Auth'
-import { LEX_REFS } from '../data/lex'
 import { CATEGORIES, type Block, type BlockType, type Book, type Category, type CoverMotif, type CoverPalette } from '../data/types'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
@@ -89,7 +87,7 @@ function StudioHome() {
           <BookGroup title="Drafts" books={drafts} empty="No drafts. Start a new book to see it here." />
           <BookGroup title="Published" books={published} empty="Nothing published yet." />
         </div>
-        <LegalReferences />
+        <LawWatch />
       </div>
     </div>
   )
@@ -130,108 +128,6 @@ function BookGroup({ title, books, empty }: { title: string; books: Book[]; empt
         </ul>
       )}
     </section>
-  )
-}
-
-function LegalReferences() {
-  const { lexReviews, reviewLex, getBook } = useStore()
-  const author = useAuthor()
-  // only notices about provisions linked from this professor's own books
-  const notices = Object.values(LEX_REFS).filter(r => r.hasNotice && r.notice && getBook(r.notice.affectedBook)?.ownerId === author.id)
-  return (
-    <aside className="self-start rounded-md border border-line bg-paper">
-      <div className="border-b border-line px-5 py-4">
-        <p className="flex items-center gap-2 font-serif text-lg font-semibold">
-          <Scale size={17} className="text-forest" /> Legal references
-        </p>
-        <p className="mt-1 text-[12px] leading-relaxed text-muted">
-          Provisions of legislation linked from your chapters. When a linked provision may have changed, a notice appears here for review.
-        </p>
-      </div>
-      {notices.length === 0 && <p className="px-5 py-6 text-[13px] text-muted">No notices for your books.</p>}
-      {notices.map(r => {
-        const n = r.notice!
-        const decision = lexReviews[r.id]
-        const book = getBook(n.affectedBook)
-        const chapter = book?.chapters.find(c => c.id === n.affectedChapter)
-        return (
-          <div key={r.id} className="px-5 py-5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="demo-tag !border-wine/40 !text-wine">Sample notice — not a real Lex.uz change</span>
-            </div>
-            <p className="mt-3 text-[14px] font-medium">
-              {r.act}, {r.article} — {r.title}
-            </p>
-            <p className="mt-1 text-[12px] text-muted">
-              Received {n.received} · used in “{chapter?.title}”, {book?.title}
-            </p>
-            <p className="mt-3 text-[13px] leading-relaxed text-soft">{n.summary}</p>
-
-            <div className="mt-4 space-y-2 text-[13px] leading-relaxed">
-              <div className="rounded-sm border border-line bg-ivory/60 p-3">
-                <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted">Text in your chapter</p>
-                <p className="font-serif">{r.currentText}</p>
-              </div>
-              <div className="rounded-sm border border-forest/25 bg-forest-50 p-3">
-                <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-forest">Proposed wording (demo)</p>
-                <p className="font-serif">
-                  <DiffText before={r.currentText} after={n.proposedText} />
-                </p>
-              </div>
-            </div>
-
-            {decision ? (
-              <div className="mt-4 flex items-center justify-between gap-3 rounded-sm bg-ivory px-3 py-2.5 text-[13px]">
-                <span className="flex items-center gap-1.5 text-forest">
-                  <Check size={14} /> {decision === 'approved' ? 'Update approved — students now see the new wording.' : 'Dismissed — chapter left unchanged.'}
-                </span>
-                <button onClick={() => reviewLex(r.id, null)} className="flex shrink-0 items-center gap-1 text-muted hover:text-ink">
-                  <Undo2 size={13} /> Undo
-                </button>
-              </div>
-            ) : (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button className="btn-primary btn-sm" onClick={() => reviewLex(r.id, 'approved')}>
-                  <Check size={14} /> Approve update
-                </button>
-                <button className="btn-secondary btn-sm" onClick={() => reviewLex(r.id, 'dismissed')}>
-                  Keep current text
-                </button>
-                {book && chapter && (
-                  <Link to={`/read/${book.id}/${chapter.id}#c4-h-3`} className="btn-ghost btn-sm">
-                    <Eye size={14} /> View in chapter
-                  </Link>
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
-      <p className="border-t border-line px-5 py-3 text-[11px] leading-relaxed text-muted">
-        This prototype has no live connection to Lex.uz. Notices and wording are illustrative; verify every provision against the official database.
-      </p>
-    </aside>
-  )
-}
-
-/** Highlights words that were added in `after` compared with `before` (simple word-level comparison). */
-function DiffText({ before, after }: { before: string; after: string }) {
-  const a = before.split(' ')
-  const b = after.split(' ')
-  let start = 0
-  while (start < a.length && a[start] === b[start]) start++
-  let endA = a.length - 1
-  let endB = b.length - 1
-  while (endA >= start && endB >= start && a[endA] === b[endB]) {
-    endA--
-    endB--
-  }
-  return (
-    <>
-      {b.slice(0, start).join(' ')}{' '}
-      <mark className="rounded-[2px] bg-[#DCE8D8] px-0.5 text-forest">{b.slice(start, endB + 1).join(' ')}</mark>{' '}
-      {b.slice(endB + 1).join(' ')}
-    </>
   )
 }
 
@@ -685,8 +581,8 @@ function BlockEditor({
           <div className="text-[13px]">
             <p className="font-medium">{b.act}, {b.article} — {b.title}</p>
             <p className="mt-1 font-serif text-soft">{b.excerpt}</p>
-            {LEX_REFS[b.refId]?.hasNotice && (
-              <p className="mt-2 flex items-center gap-1.5 text-[12px] text-wine"><AlertTriangle size={12} /> Has a sample amendment notice — review it on the Studio page.</p>
+            {b.official && (
+              <p className="mt-2 flex items-center gap-1.5 text-[12px] text-forest"><Check size={12} /> Checked against Lex.uz by Law Watch, approved by {b.official.approvedBy}.</p>
             )}
           </div>
         ) : b.type === 'list' ? (

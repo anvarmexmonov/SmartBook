@@ -38,6 +38,8 @@ export type Block =
       article: string
       title: string
       excerpt: string
+      /** Set when a professor approves a Law Watch check against the live Lex.uz text. */
+      official?: { title: string; text: string; sourceUrl: string; approvedBy: string; approvedAt: number }
     }
   | { id: string; type: 'figure'; figure: 'formation' | 'essentials'; caption: string }
   | {

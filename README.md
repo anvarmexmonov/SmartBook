@@ -56,6 +56,20 @@ Demo hisoblardan birini ishlating yoki “Sign Up” sahifasida o‘z hisobingiz
 
 Rolni almashtirish uchun yuqori o‘ng burchakdagi hisob menyusidan chiqing (Log out) va boshqa hisob bilan kiring.
 
+## Law Watch agenti (Lex.uz tekshiruvi)
+
+Kichik agent kitoblarda keltirilgan qonun moddalarini **haqiqiy lex.uz** sahifasi bilan solishtiradi:
+
+1. Fuqarolik kodeksini lex.uz’dan yuklab oladi va moddalarga ajratadi.
+2. Har bir iqtibos uchun tekshiradi: modda raqami mavzuga mosmi, modda kuchini yo‘qotganmi, matni o‘zgarganmi.
+3. Muammo topsa, professorga taklif yuboradi. Kitob **faqat professor tasdiqlagandan keyin** o‘zgaradi.
+
+Sinab ko‘rish: professor sifatida kiring → **Studio** → o‘ngdagi **Law Watch** paneli → **Run check now**.
+Agent “Civil Law Fundamentals” kitobida taklif (oferta) uchun 365-modda ko‘rsatilganini, lex.uz’da esa oferta hozir **367-modda** ekanini topadi.
+**Approve & update book** bosilgach, talaba o‘quvchida tuzatilgan moddani va rasmiy matnni ko‘radi.
+
+Kod: `backend/law_watch.py` (agent), `backend/main.py` (`/api/law-watch` endpointlari, faqat professorlar uchun).
+
 ## Production uchun yig‘ish (ixtiyoriy)
 
 ```bash

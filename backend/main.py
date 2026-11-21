@@ -10,6 +10,7 @@ not a production authentication service (no HTTPS, rate limiting, e-mail checks,
 
 import hashlib
 import hmac
+import json
 import re
 import secrets
 import sqlite3
@@ -22,6 +23,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
+import law_watch
+
 DB_PATH = Path(__file__).parent / "data" / "smartbook.db"
 SESSION_DAYS = 30
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
@@ -33,6 +36,18 @@ DEMO_USERS = [
 ]
 
 Role = Literal["student", "professor"]
+
+# References the Law Watch agent tracks. One act, the five Civil Code articles cited in
+# "Civil Law Fundamentals", chapter 4. `topic` is the article title the book relies on.
+CIVIL_CODE = ("Civil Code of the Republic of Uzbekistan (Part One)", "https://lex.uz/ru/docs/111181")
+TRACKED_REFS = [
+    # id, owner, book, block, cited article, topic (title on lex.uz)
+    ("cc-353", "prof-rakhimova", "civil-law-fundamentals", "c4-lex-353", 353, "Понятие договора"),
+    ("cc-354", "prof-rakhimova", "civil-law-fundamentals", "c4-lex-354", 354, "Свобода договора"),
+    ("cc-364", "prof-rakhimova", "civil-law-fundamentals", "c4-lex-364", 364, "Основные положения о заключении договора"),
+    ("cc-365", "prof-rakhimova", "civil-law-fundamentals", "c4-lex-365", 365, "Оферта"),
+    ("cc-370", "prof-rakhimova", "civil-law-fundamentals", "c4-lex-370", 370, "Акцепт"),
+]
 
 
 # ---------------- database ----------------
@@ -67,8 +82,51 @@ def init_db() -> None:
                 user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 expires_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS law_refs (
+                id            TEXT PRIMARY KEY,
+                owner_id      TEXT NOT NULL,
+                book_id       TEXT NOT NULL,
+                block_id      TEXT NOT NULL,
+                act_title     TEXT NOT NULL,
+                act_url       TEXT NOT NULL,
+                cited_article INTEGER NOT NULL,
+                topic         TEXT NOT NULL,
+                official_text TEXT,
+                status        TEXT NOT NULL DEFAULT 'unchecked',
+                checked_at    REAL
+            );
+            CREATE TABLE IF NOT EXISTS law_proposals (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                ref_id        TEXT NOT NULL REFERENCES law_refs(id),
+                kind          TEXT NOT NULL,
+                summary       TEXT NOT NULL,
+                cited_article INTEGER NOT NULL,
+                cited_title   TEXT,
+                found_article INTEGER,
+                found_title   TEXT,
+                new_text      TEXT,
+                status        TEXT NOT NULL DEFAULT 'pending',
+                created_at    REAL NOT NULL,
+                decided_by    TEXT,
+                decided_at    REAL
+            );
+            CREATE TABLE IF NOT EXISTS law_runs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id    TEXT NOT NULL,
+                started_at  REAL NOT NULL,
+                finished_at REAL,
+                checked     INTEGER NOT NULL DEFAULT 0,
+                issues      INTEGER NOT NULL DEFAULT 0,
+                error       TEXT,
+                steps       TEXT NOT NULL DEFAULT '[]'
+            );
             """
         )
+        for rid, owner, book, block, article, topic in TRACKED_REFS:
+            conn.execute(
+                "INSERT OR IGNORE INTO law_refs (id, owner_id, book_id, block_id, act_title, act_url, cited_article, topic) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (rid, owner, book, block, CIVIL_CODE[0], CIVIL_CODE[1], article, topic),
+            )
         for uid, name, email, password, role in DEMO_USERS:
             if not conn.execute("SELECT 1 FROM users WHERE id = ?", (uid,)).fetchone():
                 salt = secrets.token_hex(16)
@@ -204,3 +262,147 @@ def log_out(authorization: str | None = Header(default=None)):
     if token:
         with closing(db()) as conn, conn:
             conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+
+
+# ---------------- Law Watch agent (professors only) ----------------
+
+def professor(user: sqlite3.Row = Depends(current_user)) -> sqlite3.Row:
+    if user["role"] != "professor":
+        error(status.HTTP_403_FORBIDDEN, "Only professors can use Law Watch.")
+    return user
+
+
+def _ref(row: sqlite3.Row) -> dict:
+    return {k: row[k] for k in ("id", "book_id", "block_id", "act_title", "act_url", "cited_article", "topic", "status", "checked_at")}
+
+
+def _proposal(row: sqlite3.Row) -> dict:
+    return dict(row)
+
+
+def _state(conn: sqlite3.Connection, owner_id: str) -> dict:
+    refs = conn.execute("SELECT * FROM law_refs WHERE owner_id = ? ORDER BY cited_article", (owner_id,)).fetchall()
+    ids = [r["id"] for r in refs] or [""]
+    marks = ",".join("?" * len(ids))
+    proposals = conn.execute(
+        f"SELECT p.*, r.book_id, r.block_id, r.act_title, r.act_url, r.topic FROM law_proposals p JOIN law_refs r ON r.id = p.ref_id "
+        f"WHERE p.ref_id IN ({marks}) ORDER BY (p.status = 'pending') DESC, p.created_at DESC LIMIT 20",
+        ids,
+    ).fetchall()
+    run = conn.execute("SELECT * FROM law_runs WHERE owner_id = ? ORDER BY id DESC LIMIT 1", (owner_id,)).fetchone()
+    last_run = None
+    if run:
+        last_run = {k: run[k] for k in ("started_at", "finished_at", "checked", "issues", "error")} | {"steps": json.loads(run["steps"])}
+    return {"refs": [_ref(r) for r in refs], "proposals": [_proposal(p) for p in proposals], "last_run": last_run}
+
+
+@app.get("/api/law-watch")
+def law_watch_state(user: sqlite3.Row = Depends(professor)):
+    with closing(db()) as conn:
+        return _state(conn, user["id"])
+
+
+@app.post("/api/law-watch/run")
+def law_watch_run(user: sqlite3.Row = Depends(professor)):
+    """Runs the agent once over every reference the professor's books cite."""
+    steps: list[dict] = []
+
+    def log(text: str, kind: str = "info"):
+        steps.append({"t": round(time.time(), 3), "kind": kind, "text": text})
+
+    with closing(db()) as conn, conn:
+        refs = conn.execute("SELECT * FROM law_refs WHERE owner_id = ? ORDER BY cited_article", (user["id"],)).fetchall()
+        run_id = conn.execute("INSERT INTO law_runs (owner_id, started_at) VALUES (?, ?)", (user["id"], time.time())).lastrowid
+        if not refs:
+            log("No legal references are tracked for your books yet.")
+        checked = issues = 0
+        err = None
+        for act_url in sorted({r["act_url"] for r in refs}):
+            act_refs = [r for r in refs if r["act_url"] == act_url]
+            log(f"Downloading {act_refs[0]['act_title']} from {act_url}")
+            try:
+                act = law_watch.fetch_act(act_url)
+            except Exception as e:  # network, timeout, HTML changes
+                err = f"Could not read {act_url}: {e}"
+                log(err, "error")
+                continue
+            log(f"Read “{act.title}”: {len(act.articles)} articles ({act.size // 1024} KB).")
+            for r in act_refs:
+                checked += 1
+                f = law_watch.check_reference(act, r["cited_article"], r["topic"], r["official_text"])
+                art = f["article"]
+                if f["kind"] == "ok":
+                    conn.execute(
+                        "UPDATE law_refs SET status = 'current', checked_at = ?, official_text = COALESCE(official_text, ?) WHERE id = ?",
+                        (time.time(), art.text, r["id"]),
+                    )
+                    log(f["summary"], "ok")
+                    continue
+                issues += 1
+                conn.execute("UPDATE law_refs SET status = 'attention', checked_at = ? WHERE id = ?", (time.time(), r["id"]))
+                duplicate = conn.execute(
+                    "SELECT 1 FROM law_proposals WHERE ref_id = ? AND kind = ? AND IFNULL(found_article, -1) = ? AND IFNULL(new_text, '') = ? AND status != 'approved'",
+                    (r["id"], f["kind"], art.number if art else -1, art.text if art else ""),
+                ).fetchone()
+                if duplicate:
+                    log(f["summary"] + " (already proposed)", "warn")
+                    continue
+                conn.execute(
+                    "INSERT INTO law_proposals (ref_id, kind, summary, cited_article, cited_title, found_article, found_title, new_text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (r["id"], f["kind"], f["summary"], r["cited_article"], f["cited_title"], art.number if art else None, art.title if art else None, art.text if art else None, time.time()),
+                )
+                log(f["summary"] + " → proposal sent to the professor.", "warn")
+        log(f"Done: {checked} checked, {issues} need attention.", "done")
+        conn.execute(
+            "UPDATE law_runs SET finished_at = ?, checked = ?, issues = ?, error = ?, steps = ? WHERE id = ?",
+            (time.time(), checked, issues, err, json.dumps(steps, ensure_ascii=False), run_id),
+        )
+    with closing(db()) as conn:
+        return _state(conn, user["id"])
+
+
+def _owned_proposal(conn: sqlite3.Connection, pid: int, user: sqlite3.Row) -> sqlite3.Row:
+    row = conn.execute(
+        "SELECT p.*, r.owner_id, r.book_id, r.block_id, r.act_url FROM law_proposals p JOIN law_refs r ON r.id = p.ref_id WHERE p.id = ?", (pid,)
+    ).fetchone()
+    if not row or row["owner_id"] != user["id"]:
+        error(status.HTTP_404_NOT_FOUND, "Proposal not found.")
+    if row["status"] != "pending":
+        error(status.HTTP_409_CONFLICT, "This proposal has already been decided.")
+    return row
+
+
+@app.post("/api/law-watch/proposals/{pid}/approve")
+def law_watch_approve(pid: int, user: sqlite3.Row = Depends(professor)):
+    with closing(db()) as conn, conn:
+        p = _owned_proposal(conn, pid, user)
+        now = time.time()
+        conn.execute("UPDATE law_proposals SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?", (user["name"], now, pid))
+        if p["kind"] in ("renumber", "amended"):
+            conn.execute(
+                "UPDATE law_refs SET cited_article = ?, official_text = ?, status = 'current', checked_at = ? WHERE id = ?",
+                (p["found_article"], p["new_text"], now, p["ref_id"]),
+            )
+        else:
+            conn.execute("UPDATE law_refs SET status = 'repealed', checked_at = ? WHERE id = ?", (now, p["ref_id"]))
+        # what the frontend must change in the book
+        update = {
+            "book_id": p["book_id"],
+            "block_id": p["block_id"],
+            "kind": p["kind"],
+            "article": p["found_article"],
+            "official_title": p["found_title"],
+            "official_text": p["new_text"],
+            "source_url": p["act_url"],
+            "approved_by": user["name"],
+            "approved_at": now,
+        }
+        return {"update": update, **_state(conn, user["id"])}
+
+
+@app.post("/api/law-watch/proposals/{pid}/reject")
+def law_watch_reject(pid: int, user: sqlite3.Row = Depends(professor)):
+    with closing(db()) as conn, conn:
+        _owned_proposal(conn, pid, user)
+        conn.execute("UPDATE law_proposals SET status = 'rejected', decided_by = ?, decided_at = ? WHERE id = ?", (user["name"], time.time(), pid))
+        return _state(conn, user["id"])

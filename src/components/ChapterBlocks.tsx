@@ -1,7 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react'
-import { AlertTriangle, ArrowUpRight, Check, CheckCircle2, ChevronDown, Info, RotateCcw, Scale, XCircle } from 'lucide-react'
+import { ArrowUpRight, Check, CheckCircle2, ChevronDown, Info, RotateCcw, Scale, XCircle } from 'lucide-react'
 import type { Block } from '../data/types'
-import { LEX_DISCLAIMER, LEX_REFS } from '../data/lex'
+import { LEX_DISCLAIMER } from '../data/lex'
 import { useStore } from '../store/AppStore'
 import { DiagramView, IconView, ImageView, LawRefView, TableView } from './RichBlocks'
 
@@ -119,16 +119,12 @@ function BlockView({ block: b, dropCap, preview }: { block: Block; dropCap: bool
 /* ---------------- Lex.uz reference ---------------- */
 
 function LexCard({ block }: { block: Extract<Block, { type: 'lex' }> }) {
-  const { lexReviews } = useStore()
   const [open, setOpen] = useState(false)
-  const ref = LEX_REFS[block.refId]
-  const review = lexReviews[block.refId]
-  const pending = ref?.hasNotice && !review
-  const approved = review === 'approved' && ref?.notice
-  const text = approved ? ref.notice!.proposedText : block.excerpt
+  const official = block.official
+  const checkedOn = official ? new Date(official.approvedAt * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null
 
   return (
-    <aside className="r-border my-[1.6em] rounded-[3px] border font-sans text-[0.8em]">
+    <aside id={block.id} className="r-border my-[1.6em] scroll-mt-28 rounded-[3px] border font-sans text-[0.8em]">
       <button onClick={() => setOpen(o => !o)} className="r-hover flex w-full items-start gap-3 px-4 py-3 text-left" aria-expanded={open}>
         <Scale size={16} className="r-accent mt-0.5 shrink-0" />
         <span className="min-w-0 flex-1">
@@ -137,34 +133,30 @@ function LexCard({ block }: { block: Extract<Block, { type: 'lex' }> }) {
             {block.act}, {block.article} — {block.title}
           </span>
         </span>
-        {pending && (
-          <span className="r-wine flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-[0.85em] font-medium" style={{ background: 'var(--r-wine-soft)' }}>
-            <AlertTriangle size={12} /> Possible update
-          </span>
-        )}
-        {review && (
-          <span className="r-accent flex shrink-0 items-center gap-1 text-[0.85em] font-medium">
-            <Check size={12} /> Reviewed
+        {official && (
+          <span className="r-accent flex shrink-0 items-center gap-1 text-[0.85em] font-medium" title={`Checked against Lex.uz on ${checkedOn}`}>
+            <Check size={12} /> Checked
           </span>
         )}
         <ChevronDown size={16} className={`r-muted mt-0.5 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
         <div className="r-border animate-fadeIn border-t px-4 pb-4 pt-3">
-          <p className="font-serif text-[1.15em] leading-relaxed">“{text}”</p>
-          {pending && ref?.notice && (
-            <p className="r-wine mt-3 rounded-sm px-3 py-2 leading-relaxed" style={{ background: 'var(--r-wine-soft)' }}>
-              <strong className="font-semibold">Demonstration notice ({ref.notice.received}).</strong> A linked provision may have changed. The author has
-              been asked to review this passage; until then, check the current wording on Lex.uz.
-            </p>
+          <p className="font-serif text-[1.15em] leading-relaxed">“{block.excerpt}”</p>
+          {official && (
+            <div className="mt-3 rounded-sm px-3 py-2.5" style={{ background: 'var(--r-accent-soft)' }}>
+              <p className="r-accent text-[0.85em] font-semibold">
+                Official text · {block.article} “{official.title}” (Russian, Lex.uz)
+              </p>
+              <p className="mt-1.5 whitespace-pre-line font-serif text-[1.05em] leading-relaxed">{official.text}</p>
+              <p className="r-muted mt-2 text-[0.9em]">
+                Checked by the Law Watch agent and approved by {official.approvedBy} on {checkedOn}.
+              </p>
+            </div>
           )}
-          {approved && (
-            <p className="r-accent mt-3 leading-relaxed">Wording updated after the author reviewed a sample amendment notice (demo).</p>
-          )}
-          {review === 'dismissed' && <p className="r-muted mt-3">The author reviewed a sample notice and kept this passage unchanged (demo).</p>}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="r-muted max-w-md text-[0.9em] leading-snug">{LEX_DISCLAIMER}</span>
-            <a href="https://lex.uz" target="_blank" rel="noreferrer" className="r-accent inline-flex items-center gap-1 font-medium hover:underline">
+            <span className="r-muted max-w-md text-[0.9em] leading-snug">{official ? 'The English wording above is a study summary; the official text is authoritative.' : LEX_DISCLAIMER}</span>
+            <a href={official?.sourceUrl ?? 'https://lex.uz'} target="_blank" rel="noreferrer" className="r-accent inline-flex items-center gap-1 font-medium hover:underline">
               Open Lex.uz <ArrowUpRight size={13} />
             </a>
           </div>

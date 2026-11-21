@@ -101,6 +101,13 @@ async function api<T>(path: string, init: { method?: string; body?: unknown; tok
   throw new ApiError(res.status >= 500 ? OFFLINE : `Request failed (${res.status}).`, res.status)
 }
 
+/** Calls the backend as the signed-in user (adds the session token). */
+export function authedApi<T>(path: string, init: { method?: string; body?: unknown } = {}) {
+  return api<T>(path, { ...init, token: readSession()?.token })
+}
+
+export { ApiError }
+
 /* ---------- context ---------- */
 
 type Result = { ok: true; user: SessionUser } | { ok: false; error: string; field?: Field }

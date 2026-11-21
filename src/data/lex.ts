@@ -3,7 +3,6 @@ import type { LexReference } from './types'
 /**
  * Lex.uz references used in the demo.
  * Article numbers and wording are paraphrased study summaries, not official text.
- * The amendment notice below is fully fictional and exists only to demonstrate the workflow.
  */
 export const LEX_REFS: Record<string, LexReference> = {
   'cc-353': {
@@ -40,16 +39,7 @@ export const LEX_REFS: Record<string, LexReference> = {
     title: 'Offer',
     currentText:
       'An offer is a proposal addressed to one or several specific persons which is sufficiently definite and expresses the intention of the offeror to consider itself bound by a contract with the addressee who accepts it.',
-    hasNotice: true,
-    notice: {
-      received: '14 Nov 2026',
-      summary:
-        'Sample notice: a linked provision may have been revised to address offers made through electronic platforms. The author should compare the wording and decide whether the chapter needs to change.',
-      proposedText:
-        'An offer is a proposal addressed to one or several specific persons, including a proposal sent through an electronic information system, which is sufficiently definite and expresses the intention of the offeror to consider itself bound by a contract with the addressee who accepts it.',
-      affectedBook: 'civil-law-fundamentals',
-      affectedChapter: 'clf-4',
-    },
+    hasNotice: false, // checked by the real Law Watch agent instead (backend/law_watch.py)
   },
   'cc-370': {
     id: 'cc-370',
